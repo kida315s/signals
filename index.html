@@ -438,7 +438,7 @@ function renderOCR(){
   document.getElementById('ocrApply').onclick=()=>{
     const rows=R.filter(r=>r.s&&r.qty>0&&r.avg>0),repl=document.getElementById('ocrReplace').checked,next=repl?[]:HOLD.slice();
     for(const r of rows){const prev=HOLD.find(h=>h.code===r.s.code),cur=next.find(h=>h.code===r.s.code);
-      const h=prev?{...prev,q:r.qty,avg:r.avg}:{n:r.s.n,code:r.s.code,q:r.qty,avg:r.avg,peak:Math.max(r.s.p,r.avg),buy:r.buy||TODAY,init:rp(r.avg*0.93),trail:0};
+      const h=prev?{...prev,q:r.qty,avg:r.avg}:{n:r.s.n,code:r.s.code,q:r.qty,avg:r.avg,peak:Math.max(r.s.p,r.avg),buy:r.buy||TODAY,init:initStop(r.avg,r.s.p),trail:0};
       if(cur)Object.assign(cur,h);else next.push(h)}
     const gone=repl?HOLD.filter(h=>!rows.some(r=>r.s.code===h.code)).map(h=>h.n):[];
     HOLD=next;LAST_UPLOAD=TODAY;saveHoldings();OCRRES=null;renderOCR();render();
@@ -460,7 +460,7 @@ document.getElementById('ahAdd').onclick=()=>{
   if(!(q>0&&av>0)){msg.textContent='수량과 평균 매수가를 입력하세요';msg.className='err';return}
   const ex=HOLD.find(h=>h.n===s.n);
   if(ex){const tq=ex.q+q;ex.avg=Math.round((ex.avg*ex.q+av*q)/tq);ex.q=tq}
-  else HOLD.push({n:s.n,code:s.code,q,avg:av,peak:Math.max(s.p,av),buy,init:rp(av*0.93),trail:0,strat:st});
+  else HOLD.push({n:s.n,code:s.code,q,avg:av,peak:Math.max(s.p,av),buy,init:initStop(av,s.p),trail:0,strat:st});
   saveHoldings();msg.textContent=`${s.n} 추가됨`;msg.className='ok';
   ['ahName','ahQ','ahAvg'].forEach(i=>document.getElementById(i).value='');render();
 };
@@ -919,11 +919,14 @@ const KB_HOLD=[['삼성전자',46,85283],['메지온',102,60709],['SFA반도체'
 let HOLD=[];
 const LSK='signal_board_holdings_v1';
 async function loadHoldings(){if(SHARE){try{HOLD=(JSON.parse(localStorage.getItem(LSK)||'[]')||[]).filter(h=>S(h.n))}catch(e){HOLD=[]}return}try{const j=await (await fetch('/api/holdings')).json();if(j.holdings){HOLD=j.holdings.filter(h=>S(h.n));LAST_UPLOAD=j.last_upload||LAST_UPLOAD;return}}catch(e){}
-  HOLD=KB_HOLD.filter(([n])=>S(n)).map(([n,q,avg])=>({n,code:S(n).code,q,avg,peak:S(n).p,buy:TODAY,init:rp(S(n).p*0.93),trail:0}));LAST_UPLOAD=TODAY;saveHoldings()}
+  HOLD=KB_HOLD.filter(([n])=>S(n)).map(([n,q,avg])=>({n,code:S(n).code,q,avg,peak:S(n).p,buy:TODAY,init:initStop(avg,S(n).p),trail:0}));LAST_UPLOAD=TODAY;saveHoldings()}
 function saveHoldings(){if(SHARE){try{localStorage.setItem(LSK,JSON.stringify(HOLD))}catch(e){}return}fetch('/api/holdings',{method:'POST',body:JSON.stringify({holdings:HOLD,last_upload:LAST_UPLOAD})}).catch(()=>{})}
 let LAST_UPLOAD='2026-10-05';
 const price=n=>S(n).p;
 function tdays(a,b){const hol=['2026-10-09'];let d=new Date(a),e=new Date(b),n=0;while(1){d.setDate(d.getDate()+1);if(d>e)break;const s=d.toISOString().slice(0,10);if(d.getDay()%6&&!hol.includes(s))n++}return n}
+// 최초 손절선: 평단과 현재가 중 낮은 값의 −7%. 이미 손실 중인 오래된 보유도 '지금부터' 지킬 선으로 잡음 (평단 기준이면 바로 '도달'로 오판)
+function initStop(avg,price){return rp(Math.min(avg,price||avg)*0.93)}
+function fixStops(){HOLD.forEach(h=>{const s=S(h.n);if(s&&h.init>s.p&&Math.abs(h.init-rp(h.avg*0.93))<=Math.max(1,h.avg*0.002))h.init=initStop(h.avg,s.p)})}
 function stopOf(h){const p=price(h.n);if(pct(p,h.avg)>=5)h.trail=Math.max(h.trail,rp(p*0.94));return Math.max(h.init,h.trail)}
 function isSwingHold(h){   // 스윙 신호로 산 보유: 직접 지정했거나, 매수일 직전 3일 안에 신호가 기록된 종목
   if(h.strat)return h.strat==='스윙';const ds=Object.keys(SIGLOG.days||{});const b=(h.buy||'').replace(/-/g,'');
@@ -1130,7 +1133,7 @@ function afterLoad(){
   if(SHARE){bn.innerHTML=`<b>스윙 신호 공유 페이지</b> · ${DATA.asof} 기준 · 장중 약 10분마다 갱신 · '내 보유'는 각자 브라우저에만 저장`;}else
   bn.innerHTML=k.ok?`실제 일봉(네이버) + <b>KIS 장중 데이터</b> 연결됨 · 5분봉·VWAP ${k.intra_n||0}종목 · 순위 스캔 ${k.rank?k.rank.length:0}종목 (${k.time} 기준)`:`실제 일봉(네이버) 기준. KIS 장중 연결 안 됨${k.error?' — '+k.error:''} · 단타 점수는 일봉 기반 근사치입니다.`;
   HOLD.forEach(h=>{const s=S(h.n);if(s)h.peak=Math.max(h.peak,s.p)});
-  HOLD.forEach(stopOf);saveHoldings();
+  fixStops();HOLD.forEach(stopOf);saveHoldings();
   syncSignals().then(()=>{renderRecord();
     const T=[];Object.entries(SIGLOG.days||{}).forEach(([d,items])=>items.forEach(sig=>{const r=tradeOf(sig,d);if(r&&r.status==='매도 예정'&&!SELL_SEEN[r.code+d]){SELL_SEEN[r.code+d]=1;alert_(`${r.n} 매도 신호 (${r.date.slice(4,6)}/${r.date.slice(6)} 신호분) · ${r.reason} → 다음 시가 매도`,'err')}}))});
   document.getElementById('modeInfo').textContent=`${DATA.asof} 기준 · ${STOCKS.length}종목`;
@@ -1189,7 +1192,7 @@ document.getElementById('applyBtn').onclick=()=>{
     if(x.gone){alert_(`${x.h.n} 매도 기록`,'muted');return}
     const r=x.r;if(x.prev){next.push({...x.prev,q:r.q,avg:r.avg});return}
     const s=STOCKS.find(s=>s.n===r.name);if(!s)return;const sp=clamp(s.atr*1.5,4,8);
-    next.push({n:r.name,code:s.code,q:r.q,avg:r.avg,peak:Math.max(s.p,r.avg),buy:r.buy,init:rp(r.avg*(1-sp/100)),trail:0});
+    next.push({n:r.name,code:s.code,q:r.q,avg:r.avg,peak:Math.max(s.p,r.avg),buy:r.buy,init:initStop(r.avg,s.p),trail:0});
     alert_(`${r.name} 신규 등록 · 손절선 ${fmt(r.avg*(1-sp/100))}원`,'ok')});
   HOLD=next;LAST_UPLOAD=TODAY;saveHoldings();mbg.style.display='none';render();
 };
