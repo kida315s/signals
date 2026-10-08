@@ -179,6 +179,34 @@ body.share #modeSeg,body.share #uploadBtn,body.share #stySeg,body.share #sideTab
 .addh #ahName{width:170px}.addh #ahQ{width:80px}.addh #ahAvg{width:110px}
 .hdel{border:0;background:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 4px}.hdel:hover{color:var(--red)}
 body:not(.share) .share-only{display:none}
+.ocrbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.ocr-msg{display:flex;gap:8px;align-items:center;background:var(--panel2);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:8px}
+.spin{width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#2563eb;border-radius:50%;animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+.ocr-res{background:var(--panel2);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.ocr-res select,.ocr-res input{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit;font-size:13px;max-width:150px;background:#fff}
+.ocr-res input[data-k=qty]{width:70px}.ocr-res input[data-k=avg]{width:95px}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+/* ---- 모바일 ---- */
+.layout>*{min-width:0}
+@media (max-width:640px){
+  .wrap{padding:10px 10px 40px}
+  header{gap:6px}.brand{font-size:17px}
+  .card{padding:12px;border-radius:10px}
+  .mkbar{gap:10px;padding:10px 12px}.mkbar .light{width:20px;height:20px;box-shadow:0 0 8px currentColor}
+  .mkbar .mkt{flex:1 1 200px}.mkbar .mk-desc{display:none}.mkbar .idx div.muted{display:none!important}
+  .mkr{align-items:flex-start;width:100%}
+  .picks{grid-template-columns:1fr}
+  table.rec{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;font-size:12px}
+  .plan-t td{padding:3px 6px}
+  .ch-head{flex-wrap:wrap;gap:6px}.ch-head .nm{font-size:17px}
+  .ch-tabs{flex-wrap:wrap;gap:4px}.ch-tabs button{padding:4px 10px;font-size:12.5px}
+  .ch-tabs .legend{margin-left:0!important;width:100%;flex-wrap:wrap;font-size:11.5px}
+  .drawer{padding:10px 12px!important}
+  .sidebox{height:440px}
+  .guide{grid-template-columns:1fr}
+  .addh input,.addh select{flex:1 1 40%}
+  .ocrbar .btn{width:100%}
+}
 </style>
 </head>
 <body>
@@ -257,6 +285,10 @@ body:not(.share) .share-only{display:none}
   <section class="card">
     <h2>내 보유 <span class="muted" style="font-weight:400;font-size:12px" id="holdSub"></span></h2>
     <div class="desc"><b>매도 점수 (0~100)</b>는 지금 팔아야 할 필요성입니다. 0~39 <span class="act a-hold">보유 유지</span> · 40~69 <span class="act a-half">절반 매도</span> · 70+ <span class="act a-sell">전량 매도</span>. 손절선에 닿으면 무조건 전량 매도이고, 손절선은 올라가기만 합니다. 종목을 누르면 차트에 매수가와 손절선이 표시됩니다.<br><span class="tg on">스윙 규칙</span> 표시 종목은 매도 점수 대신 새 규칙을 따릅니다: 종가가 5일선 위로 마감하면 다음 시가 전량 매도, 최대 10거래일, 가격 손절 없음(비상선 −20%). 스윙 신호 기록 뒤 3일 안에 산 종목은 자동으로 붙고, 태그를 눌러 바꿀 수 있습니다.</div>
+    <div class="ocrbar"><button class="btn primary" id="ocrBtn">잔고 스크린샷으로 불러오기</button><input type="file" id="ocrFile" accept="image/*" multiple hidden>
+      <span class="muted" style="font-size:12px">KB증권 앱 → 국내주식잔고 → 자산평가(리스트 보기) 화면 캡처. 종목이 많으면 스크롤해서 여러 장 한 번에 선택. 사진은 이 기기 안에서만 읽고 어디에도 전송되지 않습니다.</span></div>
+    <div id="ocrBox"></div>
+    <details class="addwrap"><summary class="muted" style="font-size:12.5px;cursor:pointer">직접 입력하기</summary>
     <div class="addh">
       <b>종목 직접 추가</b>
       <input id="ahName" list="ahList" placeholder="종목명 (예: 삼성전자)" autocomplete="off"><datalist id="ahList"></datalist>
@@ -266,7 +298,7 @@ body:not(.share) .share-only{display:none}
       <select id="ahStrat"><option value="스윙">스윙 규칙</option><option value="일반">일반 보유</option></select>
       <button class="btn primary" id="ahAdd">추가</button>
       <span class="muted" id="ahMsg" style="font-size:12px"></span>
-    </div>
+    </div></details>
     <div class="muted share-only" style="font-size:11.5px;margin:-4px 0 8px">입력한 보유 종목은 <b>이 기기의 이 브라우저에만</b> 저장됩니다 (서버로 전송되지 않음 · 다른 사람에게 안 보임). 다른 기기에서는 다시 입력해야 합니다.</div>
     <div id="holdList"></div>
   </section>
@@ -306,11 +338,120 @@ const sgn=(x,d=1)=>(x>0?'+':'')+x.toFixed(d)+'%';
 const cls=x=>x>0?'up':x<0?'down':'';
 const avg=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:NaN;
 const ND=120, NI=54;
-const SHARE=!!window.SHARE_MODE;   // 보유 직접 추가
+const SHARE=!!window.SHARE_MODE;   // ================= 잔고 스크린샷 인식 (브라우저 안에서만 처리 · 이미지 외부 전송 없음) =================
+let OCRW=null;
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error(src+' 불러오기 실패'));document.head.appendChild(s)})}
+async function ocrWorkers(msg){
+  if(OCRW)return OCRW;
+  const base=new URL('ocr/',location.href).href;
+  if(!window.Tesseract){msg('인식 엔진 불러오는 중… (처음 한 번 약 10MB)');await loadScript(base+'tesseract.min.js')}
+  const opt={workerPath:base+'worker.min.js',corePath:base,langPath:base,gzip:false,cacheMethod:'none'};
+  msg('한글 인식 데이터 준비 중…');
+  const k=await Tesseract.createWorker('kor+eng',1,opt);await k.setParameters({tessedit_pageseg_mode:'7'});
+  const n=await Tesseract.createWorker('eng',1,opt);await n.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789,.-%'});
+  OCRW={k,n};return OCRW;
+}
+function imgToCanvas(file){return new Promise((ok,no)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);URL.revokeObjectURL(u);ok(c)};im.onerror=()=>no(new Error('이미지를 열 수 없습니다'));im.src=u})}
+function grayRows(c){const W=c.width,H=c.height,d=c.getContext('2d').getImageData(0,0,W,H).data;return {W,H,g:(x,y)=>{const i=(y*W+x)*4;return .299*d[i]+.587*d[i+1]+.114*d[i+2]}}}
+function findLayout(c){const {W,H,g}=grayRows(c);const x0=Math.floor(W*.02),x1=Math.floor(W*.98);let seps=[],nav=H;
+  for(let y=Math.floor(H*.3);y<H;y++){let mx=0,mn=255,sm=0,n=0;for(let x=x0;x<x1;x+=2){const v=g(x,y);if(v>mx)mx=v;if(v<mn)mn=v;sm+=v;n++}
+    const mean=sm/n;if(mean<120&&y>H*.6){nav=y;break}
+    if(mx<=249&&mn>=215){if(!seps.length||y-seps[seps.length-1]>3)seps.push(y)}}
+  const diffs=seps.slice(1).map((y,i)=>y-seps[i]).filter(d=>d>H*.04&&d<H*.09).sort((a,b)=>a-b);
+  if(diffs.length&&seps.length){const pitch=diffs[Math.floor(diffs.length/2)],f=[seps[0]];
+    for(const y of seps.slice(1)){const gap=y-f[f.length-1],k=Math.round(gap/pitch);if(k>=2&&Math.abs(gap-k*pitch)<pitch*.12)for(let i=1;i<k;i++)f.push(f[f.length-1]+Math.floor(gap/k));f.push(y)}seps=f}
+  return {seps,nav};}
+function cellCanvas(src,x,y,w,h,scale=3,whiten=true){
+  const c=document.createElement('canvas');c.width=Math.max(1,w);c.height=Math.max(1,h);const cx=c.getContext('2d');cx.drawImage(src,x,y,w,h,0,0,w,h);
+  const id=cx.getImageData(0,0,w,h),d=id.data;
+  if(whiten){const lim=Math.max(12,w/12);for(let yy=0;yy<h;yy++){let xx=0;while(xx<w){const i=(yy*w+xx)*4;if(d[i]+d[i+1]+d[i+2]<200){const s=xx;while(xx<w){const j=(yy*w+xx)*4;if(d[j]+d[j+1]+d[j+2]>=200)break;xx++}if(xx-s>lim)for(let k=s;k<xx;k++){const j=(yy*w+k)*4;d[j]=d[j+1]=d[j+2]=255}}xx++}}}
+  for(let i=0;i<d.length;i+=4){const v=.299*d[i]+.587*d[i+1]+.114*d[i+2]<170?0:255;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}
+  cx.putImageData(id,0,0);
+  const o=document.createElement('canvas');o.width=w*scale;o.height=h*scale;const ox=o.getContext('2d');ox.fillStyle='#fff';ox.fillRect(0,0,o.width,o.height);ox.imageSmoothingEnabled=true;ox.drawImage(c,0,0,o.width,o.height);return o;}
+const toNum=s=>{if(!s)return null;s=s.replace(/[,\s%]/g,'').replace(/[Oo]/g,'0').replace(/[lI|]/g,'1');const m=s.match(/-?\d+(\.\d+)?/);return m?parseFloat(m[0]):null};
+async function ocrScreenshot(c,W8,msg,idx){
+  const {seps,nav}=findLayout(c),W=c.width,H=c.height;let total=null;
+  if(seps.length){const hc=cellCanvas(c,0,0,W,seps[0],2,false);await W8.k.setParameters({tessedit_pageseg_mode:'6'});
+    const t=(await W8.k.recognize(hc)).data.text;await W8.k.setParameters({tessedit_pageseg_mode:'7'});
+    for(const line of t.split('\n'))if(line.includes('매입')){const nums=(line.split('매입').pop().match(/-?[\d,]+/g)||[]).map(toNum).filter(v=>v&&v>1000);if(nums.length)total=nums[nums.length-1]}}
+  const bx=[0,W*.28,W*.535,W*.765,W].map(Math.floor),bounds=seps.concat([nav]);
+  const hs=bounds.slice(1).map((b,i)=>b-bounds[i]).filter(h=>h>H*.03).sort((a,b)=>a-b),full=hs.length?hs[Math.floor(hs.length/2)]:0;
+  const rows=[];let ri=0;const nrow=bounds.slice(1).filter((b,i)=>{const h=b-bounds[i];return h>=full*.9&&h<=full*1.1}).length;
+  for(let i=0;i<bounds.length-1;i++){const a=bounds[i],b=bounds[i+1],h=b-a;if(h<full*.9||h>full*1.1)continue;ri++;
+    msg(`${idx}번째 사진 · ${ri}/${nrow}행 읽는 중…`);
+    const mid=Math.floor((a+b)/2),pad=3,cell=(ci,half)=>cellCanvas(c,bx[ci]+4,half?mid:a+pad,bx[ci+1]-bx[ci]-8,half?b-pad-mid:mid-a-pad);
+    const rd=async(w,cv)=>(await w.recognize(cv)).data.text.trim();
+    const name=(await rd(W8.k,cell(0,0))).replace(/[^가-힣A-Za-z0-9&.\-]/g,'');
+    const r={raw:name,weight:toNum(await rd(W8.n,cell(0,1))),pnl:toNum(await rd(W8.n,cell(1,0))),pnl_pct:toNum(await rd(W8.n,cell(1,1))),
+      avg:toNum(await rd(W8.n,cell(2,0))),price:toNum(await rd(W8.n,cell(2,1))),qty:toNum(await rd(W8.n,cell(3,0))),sellable:toNum(await rd(W8.n,cell(3,1)))};
+    if(r.raw&&!r.raw.includes('종목')&&(r.avg||r.price))rows.push(r)}
+  return {rows,total};
+}
+function lev(a,b){const m=a.length,n=b.length,d=Array.from({length:m+1},(_,i)=>[i]);for(let j=1;j<=n;j++)d[0][j]=j;
+  for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[m][n]}
+function matchStock(raw,price){
+  if(!raw)return null;const ex=STOCKS.find(s=>s.n===raw);if(ex)return ex;
+  const hg=raw.replace(/[^가-힣]/g,'');let c=hg?STOCKS.filter(s=>s.n.endsWith(hg)||s.n.replace(/[^가-힣]/g,'')===hg):[];
+  if(c.length>1&&price)c.sort((a,b)=>Math.abs(a.p-price)-Math.abs(b.p-price));if(c.length)return c[0];
+  let best=null,bs=0;for(const s of STOCKS){const r=1-lev(raw,s.n)/Math.max(raw.length,s.n.length);const pr=price&&s.p?Math.min(s.p,price)/Math.max(s.p,price):.5;const sc=r*.8+pr*.2;if(sc>bs){bs=sc;best=s}}
+  return bs>=.55?best:null;
+}
+function checkRow(r,total){const iss=[];const cands=[];
+  for(const [src,q] of [['보유수량',r.qty],['매도가능',r.sellable]])if(q&&q>0&&q===Math.round(q))cands.push([src,q]);
+  if(r.pnl&&r.pnl_pct&&r.avg){const q=r.pnl/(r.pnl_pct/100)/r.avg;if(Math.abs(q-Math.round(q))<.05&&Math.round(q)>0)cands.push(['역산',Math.round(q)])}
+  const ok=q=>!(r.pnl!=null&&r.price&&r.avg)||Math.abs((r.price-r.avg)*q-r.pnl)<=r.price*q*.004+10;
+  const good=cands.filter(c=>ok(c[1]));if(good.length){if(good[0][0]!=='보유수량')iss.push(['info',`보유수량이 가려져 ${good[0][0]} 값으로 대체`]);r.qty=good[0][1]}else if(cands.length)r.qty=cands[0][1];
+  if(!r.qty||!r.avg){iss.push(['err','숫자 인식 실패 — 직접 고쳐주세요']);return iss}
+  const cost=r.avg*r.qty;
+  if(r.pnl!=null&&r.pnl_pct!=null&&Math.abs(r.pnl/cost*100-r.pnl_pct)>.1)iss.push(['err',`손익률이 안 맞음 (계산 ${(r.pnl/cost*100).toFixed(2)}% vs 화면 ${r.pnl_pct}%)`]);
+  if(r.pnl!=null&&r.price&&Math.abs((r.price-r.avg)*r.qty-r.pnl)>r.price*r.qty*.004+10)iss.push(['err','평가손익이 안 맞음']);
+  if(total&&r.weight!=null&&Math.abs(cost/total*100-r.weight)>.1)iss.push(['warn','비중이 안 맞음']);
+  return iss;}
+let OCRRES=null;
+async function runOCR(files){
+  const box=document.getElementById('ocrBox'),msg=t=>{box.innerHTML=`<div class="ocr-msg"><span class="spin"></span>${t}</div>`};
+  try{
+    const W8=await ocrWorkers(msg);let all=[],total=null,i=0;
+    for(const f of files){i++;msg(`${i}번째 사진 분석 중…`);const c=await imgToCanvas(f);const r=await ocrScreenshot(c,W8,msg,i);all=all.concat(r.rows);total=r.total||total}
+    const merged={};
+    all=all.filter(r=>r.raw.replace(/[^가-힣A-Za-z]/g,'').length>=2);
+    for(const r of all){const s=matchStock(r.raw,r.price);if(!s&&!(r.qty||r.sellable)&&!r.avg)continue;r.s=s;r.iss=checkRow(r,total);if(!s)r.iss.unshift(['err',`'${r.raw}' — 목록에서 못 찾음 (이 보드는 약 330종목만 시세 제공)`]);
+      const key=s?s.code:r.raw,bad=r.iss.filter(x=>x[0]==='err').length;if(!merged[key]||bad<=merged[key].bad)merged[key]={...r,bad}}
+    const res=Object.values(merged),sum=res.reduce((a,r)=>a+(r.avg||0)*(r.qty||0),0);
+    OCRRES={rows:res,total,complete:total?Math.abs(sum-total)<=Math.max(100,total*.0005):null,sum};renderOCR();
+  }catch(e){box.innerHTML=`<div class="err">인식 실패: ${e.message}</div>`}
+}
+function renderOCR(){
+  const box=document.getElementById('ocrBox');if(!OCRRES){box.innerHTML='';return}
+  const R=OCRRES.rows,opts=STOCKS.slice().sort((a,b)=>a.n.localeCompare(b.n,'ko')).map(s=>`<option value="${s.code}">${s.n}</option>`).join('');
+  box.innerHTML=`<div class="ocr-res"><b>인식 결과 ${R.length}종목</b> ${OCRRES.complete===true?'<span class="ok">· 총매입금액과 일치 (누락 없음)</span>':OCRRES.complete===false?`<span class="warn">· 총매입금액(${fmt(OCRRES.total)})과 합계(${fmt(OCRRES.sum)})가 달라요 — 아래로 스크롤한 화면도 같이 올려주세요</span>`:''}
+   <div class="tblwrap"><table class="rec"><tr><th>종목</th><th>수량</th><th>평단</th><th>매수일</th><th>확인</th></tr>
+   ${R.map((r,i)=>{const prev=r.s&&HOLD.find(h=>h.code===r.s.code);return `<tr><td><select data-i="${i}" data-k="code"><option value="">— 선택 —</option>${opts.replace(`value="${r.s?r.s.code:'x'}"`,`value="${r.s?r.s.code:'x'}" selected`)}</select><div class="muted" style="font-size:11px">읽은 글자: ${r.raw}</div></td>
+     <td><input data-i="${i}" data-k="qty" value="${r.qty??''}" inputmode="numeric"></td><td><input data-i="${i}" data-k="avg" value="${r.avg??''}" inputmode="numeric"></td>
+     <td>${prev?`<span class="muted">${prev.buy}</span>`:`<input type="date" data-i="${i}" data-k="buy" value="${r.buy||TODAY}">`}</td>
+     <td style="font-size:12px">${r.iss.length?r.iss.map(([t,m])=>`<div class="${t==='info'?'muted':t}">${t==='info'?'·':'✗'} ${m}</div>`).join(''):'<span class="ok">✓ 확인됨</span>'}</td></tr>`}).join('')}</table></div>
+   <label style="font-size:12.5px;display:block;margin:6px 0"><input type="checkbox" id="ocrReplace" checked> 스크린샷에 없는 기존 보유 종목은 매도한 것으로 보고 삭제</label>
+   <button class="btn primary" id="ocrApply">보유에 적용</button> <button class="btn" id="ocrCancel">취소</button></div>`;
+  box.querySelectorAll('[data-k]').forEach(el=>el.onchange=()=>{const r=R[+el.dataset.i],k=el.dataset.k;
+    if(k==='code'){r.s=STOCKS.find(s=>s.code===el.value)||null;r.iss=r.iss.filter(x=>!x[1].includes('못 찾음'))}else if(k==='buy')r.buy=el.value;else r[k]=+String(el.value).replace(/,/g,'')});
+  document.getElementById('ocrCancel').onclick=()=>{OCRRES=null;renderOCR()};
+  document.getElementById('ocrApply').onclick=()=>{
+    const rows=R.filter(r=>r.s&&r.qty>0&&r.avg>0),repl=document.getElementById('ocrReplace').checked,next=repl?[]:HOLD.slice();
+    for(const r of rows){const prev=HOLD.find(h=>h.code===r.s.code),cur=next.find(h=>h.code===r.s.code);
+      const h=prev?{...prev,q:r.qty,avg:r.avg}:{n:r.s.n,code:r.s.code,q:r.qty,avg:r.avg,peak:Math.max(r.s.p,r.avg),buy:r.buy||TODAY,init:rp(r.avg*0.93),trail:0};
+      if(cur)Object.assign(cur,h);else next.push(h)}
+    const gone=repl?HOLD.filter(h=>!rows.some(r=>r.s.code===h.code)).map(h=>h.n):[];
+    HOLD=next;LAST_UPLOAD=TODAY;saveHoldings();OCRRES=null;renderOCR();render();
+    alert_(`잔고 반영: ${rows.length}종목${gone.length?` · 삭제 ${gone.join(', ')}`:''}`,'ok')};
+}
+
+// 보유 직접 추가
 function initAddHold(){
   document.getElementById('ahList').innerHTML=STOCKS.map(s=>`<option value="${s.n}">${s.code}</option>`).join('');
   document.getElementById('ahBuy').value=TODAY;
 }
+document.getElementById('ocrBtn').onclick=()=>document.getElementById('ocrFile').click();
+document.getElementById('ocrFile').onchange=e=>{const f=[...e.target.files];e.target.value='';if(f.length)runOCR(f)};
 document.getElementById('ahAdd').onclick=()=>{
   const nm=document.getElementById('ahName').value.trim(),q=+document.getElementById('ahQ').value,av=+document.getElementById('ahAvg').value,
     buy=document.getElementById('ahBuy').value||TODAY,st=document.getElementById('ahStrat').value,msg=document.getElementById('ahMsg');
@@ -579,7 +720,7 @@ function badge(x,y,n,bad){return `<g><circle cx="${x}" cy="${y}" r="10" fill="${
 const inR=(h,s)=>Math.abs(pct(h.avg,s.p))<35;
 function hline(W,pl,pr,y,color,label,dash,left){const lx=left?pl+2:W-pr+2,lw=left?84:pr-4;return `<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" stroke="${color}" stroke-width="1.2" ${dash?'stroke-dasharray="5 4"':''}/><rect x="${lx}" y="${y-9}" width="${lw}" height="18" rx="4" fill="${color}"/><text x="${lx+lw/2}" y="${y+4}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">${label}</text>`}
 function frame(bars,extra,opt){
-  const W=860,H=460,pl=8,pr=74,pt=18,pb=26,vh=60,ph=H-pt-pb-vh-10;
+  const MOB=window.innerWidth<640,W=MOB?500:860,H=MOB?420:460,pl=6,pr=MOB?64:74,pt=18,pb=26,vh=MOB?50:60,ph=H-pt-pb-vh-10;
   const lows=bars.map(b=>b.l).concat(extra),highs=bars.map(b=>b.h).concat(extra);
   let mn=Math.min(...lows),mx=Math.max(...highs);const pad=(mx-mn)*.06;mn-=pad;mx+=pad;
   const n=bars.length,bw=(W-pl-pr)/n,X=i=>pl+(i+.5)*bw,Y=v=>pt+(mx-v)/(mx-mn)*ph,Yinv=y=>mx-(y-pt)/ph*(mx-mn);
@@ -595,8 +736,8 @@ function frame(bars,extra,opt){
 }
 function nowMark(F,s,last){return `<circle cx="${F.X(last)}" cy="${F.Y(s.p)}" r="5" fill="#d97706" stroke="#ffffff" stroke-width="2"/><rect x="${F.X(last)-96}" y="${F.Y(s.p)-30}" width="86" height="18" rx="4" fill="#ffffff" stroke="#d97706"/><text x="${F.X(last)-53}" y="${F.Y(s.p)-17}" text-anchor="middle" font-size="11" font-weight="700" fill="#d97706">지금 ${fmt(s.p)}</text>`}
 function planLines(F,s,e,hold,lim=35){
-  let o=hline(F.W,F.pl,F.pr,F.Y(hold?stopOf(hold):e.stop),'#e5243b',`손절 ${fmt(hold?stopOf(hold):e.stop)}`,true);
-  if(!hold)o+=hline(F.W,F.pl,F.pr,F.Y(e.t1),'#16a34a',`${e.type==='스윙'?'5일선(매도 기준)':'익절'} ${fmt(e.t1)}`,true);
+  let o=hline(F.W,F.pl,F.pr,F.Y(hold?stopOf(hold):e.stop),'#e5243b',`${!hold&&e.type==='스윙'?'비상':'손절'} ${fmt(hold?stopOf(hold):e.stop)}`,true);
+  if(!hold)o+=hline(F.W,F.pl,F.pr,F.Y(e.t1),'#16a34a',`${e.type==='스윙'?'5일선':'익절'} ${fmt(e.t1)}`,true);
   if(hold)o+=Math.abs(pct(hold.avg,s.p))<lim?hline(F.W,F.pl,F.pr,F.Y(hold.avg),'#667085',`내 매수 ${fmt(hold.avg)}`,true,true):`<text x="${F.pl+6}" y="34" font-size="11" font-weight="700" fill="#667085">내 매수가 ${fmt(hold.avg)}원 · 차트 범위 밖 (${sgn(pct(s.p,hold.avg),0)})</text>`;
   else if(!e.met)o+=hline(F.W,F.pl,F.pr,F.Y(e.entry),'#16a34a',`매수 ${fmt(e.entry)}`,true);
   return o;
@@ -717,7 +858,7 @@ function renderChart(){
     <div class="ch-tabs">${[20,40,60,120].map(n=>`<button data-v="daily" data-sp="${n}" class="${chView==='daily'&&chSpan===n?'on':''}">${n}일</button>`).join('')}${chView==='daily'&&![20,40,60,120].includes(chSpan)?`<button class="on" data-v="daily" data-sp="${chSpan}">${chSpan}일</button>`:''}<button data-v="intra" class="${chView==='intra'?'on':''}">오늘 5분봉</button>
       <span class="legend" style="margin-left:auto">${C.legend.map(([k,c,t])=>`<span class="${k?'lg-t':''} ${k&&chHide[k]?'off':''}" data-k="${k||''}"><i style="background:${c}"></i>${t}</span>`).join('')}</span></div>
     <div class="chartbox ${hideCls}">${C.svg}<div class="tip"></div></div>
-    <div class="muted" style="font-size:11px;margin-top:4px">마우스를 올리면 그날 시세 · <b>마우스 휠로 확대/축소</b>(20~120일) · 범례를 누르면 선 켜고 끄기 · 초록 띠 = 매수 구간</div>
+    <div class="muted" style="font-size:11px;margin-top:4px">${window.innerWidth<640?'차트를 가로로 끌면 그날 시세 · 위 버튼으로 기간 변경':'마우스를 올리면 그날 시세 · <b>마우스 휠로 확대/축소</b>(20~120일)'} · 범례를 누르면 선 켜고 끄기 · 초록 띠 = 매수 구간</div>
    </div>
    <div class="dr-bottom"><div class="why">
       <div><div style="font-weight:700;margin-bottom:4px">왜 이 위치인가 <span class="muted" style="font-weight:400;font-size:12px">· 번호 = 차트의 동그라미 · <span class="warn">주황</span> 좋은 점 · <span class="err">빨강</span> 걸리는 점</span></div>
@@ -999,7 +1140,8 @@ function afterLoad(){
 // ================= 업로드 =================
 const mbg=document.getElementById('mbg');
 const show=n=>[1,2,3].forEach(i=>document.getElementById('st'+i).style.display=i===n?'':'none');
-document.getElementById('uploadBtn').onclick=()=>{mbg.style.display='flex';show(1)};
+document.getElementById('uploadBtn').onclick=()=>{document.querySelector('#tabs button[data-t="hold"]').click();document.getElementById('ocrFile').click()};
+const _oldUpload=()=>{mbg.style.display='flex';show(1)};   // (예전 예시 인식 화면 — 사용 안 함)
 document.getElementById('mClose').onclick=()=>mbg.style.display='none';
 const drop=document.getElementById('drop');
 ['dragover','dragenter'].forEach(e=>drop.addEventListener(e,v=>{v.preventDefault();drop.classList.add('hover')}));
