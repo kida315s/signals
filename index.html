@@ -413,10 +413,14 @@ function evalStock(s){
     stop=Math.min(s.prevHigh,s.vwap??s.prevHigh)*0.985;}
   else{ // 스윙(반등)
     entry=s.p;stop=s.p*0.80;
-    if(!CLOSED&&s.mrPrev&&MRREG){met=true;cond=`어제 종가 RSI(2) ${s.rsi2Prev.toFixed(1)} 확정 신호 → 오늘 시가 매수 (장중 가격과 무관하게 오늘 하루 고정)`;}
+    s.chase=false;{ const kSig=(!CLOSED&&s.liveBar)?ND-2:ND-1;s.zoneTop=rp(ma(s.daily,5,kSig)*ZONE);s.ma5Sig=ma(s.daily,5,kSig); }
+    if(!CLOSED&&s.mrPrev&&MRREG){entry=s.zoneTop;stop=entry*0.80;
+      if(s.p<=s.zoneTop){met=true;cond=`어제 확정 신호 · 지금 ${fmt(s.p)}원은 매수 구간(${fmt(s.zoneTop)}원 이하) 안 → 매수`;}
+      else{met=false;s.chase=true;cond=`어제 확정 신호지만 지금 ${fmt(s.p)}원은 매수 구간 위 → 추격 금지. ${fmt(s.zoneTop)}원(5일선 −3%) 이하로 내려오면 매수 (오늘 장중만 유효)`;}}
     else if(!mrElig){met=false;cond=!s.mrLiq?`거래대금 20일 평균 ${fmt(s.amt20)}억 — 100억 이상 종목만 매매`:`60일선 위·우상향 종목만 매매 (지금 ${s.p>s.ma60?'60일선 우하향':'60일선 아래'})`;}
     else if(!MRREG){met=false;cond='코스피·코스닥 모두 60일선 아래 — 신규 반등 매수 쉬기';}
-    else if(s.rsi2<5&&CLOSED){met=true;cond=`RSI(2) ${s.rsi2.toFixed(1)} — 단기 과매도 마감 → ${PRE?'오늘':'다음 거래일'} 시가 매수`;}
+    else if(s.rsi2<5&&CLOSED){met=true;entry=s.zoneTop;stop=entry*0.80;cond=`RSI(2) ${s.rsi2.toFixed(1)} 과매도 마감 → ${PRE?'오늘':'다음 거래일'} 시가가 ${fmt(s.zoneTop)}원(5일선 −3%) 이하면 시가 매수, 위면 ${fmt(s.zoneTop)}원 지정가 (안 내려오면 패스)`;}
+    else if(false){}
     else if(s.rsi2<5){met=false;cond=`장중 후보 · 지금 RSI(2) ${s.rsi2.toFixed(1)} — 오늘 종가까지 5 미만이면 확정 → 다음 거래일 시가 매수 (장중엔 바뀔 수 있음)`;}
     else{met=false;const tp=rsiTrigger(s.cl,5,CLOSED);entry=rp(tp);stop=entry*0.80;
       cond=`${CLOSED&&!PRE?'다음 거래일':'오늘'} 종가가 ${fmt(entry)}원(${sgn(pct(entry,s.p))}) 이하로 마감하면 RSI(2)<5 → 그다음 날 시가 매수`;}
@@ -443,6 +447,7 @@ function evalStock(s){
   return {s,score,type,met,cond,entry,act,stop,sp,t1,t1p,rr,rest,horizon,qty:Math.floor(eq*wt/entry),won:eq*wt,inZone,ts,P,
     reasons:R.filter(r=>r[0]>8).sort((a,b)=>b[0]-a[0]).slice(0,3).map(r=>r[1]),cautions:C};
 }
+const ZONE=0.97;   // 매수 상한 = 신호일 5일선 −3% (검증: 이보다 위에서 사면 기대수익이 크게 줄어듦)
 const ACT_CLS={'매수':'a-buy','매수 대기':'a-wait','관망':'a-watch','제외':'a-watch'};
 const scoreColor=v=>v>=68?'var(--up)':v>=60?'var(--yellow)':v>=50?'#667085':'var(--down)';
 
@@ -471,6 +476,17 @@ function renderToday(){
     `<div class="sec"><span class="act a-buy">매수</span> 지금 좋은 위치 (${B.length})</div><div class="picks">${B.slice(0,12).map(card).join('')||'<div class="muted">없음</div>'}</div>`+
     `<div class="sec"><span class="act a-wait">매수 대기</span> 좋은 종목, 위치를 기다리는 중 (${Wt.length})</div><div class="picks">${Wt.slice(0,WMORE).map(card).join('')||'<div class="muted">없음</div>'}</div>`+
     (Wt.length>WMORE?`<button class="btn more" id="moreW">매수 대기 ${Math.min(12,Wt.length-WMORE)}개 더 보기 (남은 ${Wt.length-WMORE})</button>`:Wt.length>6?`<button class="btn more" id="lessW">접기</button>`:'');
+  { const hm=+DATA.asof.slice(11).replace(':','');const live=!CLOSED;const k=ND-1;
+    const L2=STOCKS.map(s=>({s,c:live&&!s.liveBar?null:cbAt(s,s.liveBar||CLOSED&&!PRE?k:k,live)})).filter(x=>x.c&&(x.c.ok||(live&&x.c.near)));
+    const conf=L2.filter(x=>x.c.ok).sort((a,b)=>b.c.vr-a.c.vr),near=L2.filter(x=>!x.c.ok).sort((a,b)=>b.c.chg-a.c.chg);
+    const when=PRE?'어제 종가 신호 (이미 마감 — 오늘은 매수 불가, 기록용)':CLOSED?'오늘 종가 확정 신호 · 동시호가에 샀다면 5거래일 뒤 종가 매도':hm<1430?'장중 후보 (확정 아님) · 14:30 이후 다시 확인':'⏰ 15:20~15:30 종가 동시호가 매수 시간 · 마감 직전 조건 유지 확인';
+    const row=x=>{const s=x.s,c=x.c;const miss=c.conds.filter(z=>!z[1]).map(z=>z[0]);
+      return `<tr class="clk" data-n="${s.n}"><td><b>${s.n}</b> <span class="muted" style="font-size:11px">${s.th}</span></td><td class="num ${cls(c.chg)}">${sgn(c.chg*100)}</td><td class="num">${c.vr.toFixed(1)}배</td><td class="num">${Math.round(c.clp*100)}%</td><td class="num">${fmt(c.amt)}억</td><td class="num">${fmt(s.p)}</td>
+        <td>${c.ok?'<span class="act a-buy">종가 매수</span>':`<span class="act a-wait">후보</span> <span class="muted" style="font-size:11.5px">${miss.join(', ')} 미충족</span>`}</td></tr>`};
+    document.getElementById('picks').insertAdjacentHTML('beforeend',`<div class="sec"><span class="ty ty-d">종가베팅</span> 장대양봉 종가 매수 → 5거래일 뒤 종가 매도 (${conf.length}) <span class="muted" style="font-weight:400;font-size:12px">${when}</span></div>
+      ${conf.length||near.length?`<table class="rec"><tr><th>종목</th><th>등락</th><th>거래량</th><th>마감 위치</th><th>거래대금</th><th>현재가</th><th>판단</th></tr>${conf.slice(0,10).map(row).join('')}${near.slice(0,6).map(row).join('')}</table>`:'<div class="muted" style="font-size:12.5px">조건에 맞는 종목 없음</div>'}
+      <div class="muted" style="font-size:11.5px;margin-top:4px">조건: +5~15% · 거래량 2배↑ · 고가 근처 마감 · 20일선 우상향 · 거래대금 100억↑ · 시장 필터. 종목당 10%, 손절 없이 5일 보유. 2024~26 검증 785건 · 승률 46% · 평균 +0.97%(비용 후). <b>단독으로는 코스피 보유보다 수익이 낮았던 전략</b>입니다. 다음날 시가에 사면 효과가 사라지니 반드시 종가에 매수.</div>`);
+    document.querySelectorAll('#picks tr.clk').forEach(r=>r.onclick=()=>openChart(r.dataset.n)); }
   const mw=document.getElementById('moreW');if(mw)mw.onclick=()=>{WMORE+=12;renderToday()};
   const lw=document.getElementById('lessW');if(lw)lw.onclick=()=>{WMORE=6;renderToday()};
   document.querySelectorAll('.pick').forEach(c=>c.onclick=()=>openChart(c.dataset.n));
@@ -511,7 +527,7 @@ function card(e){const s=e.s;
     <div class="scoreline"><span class="act ${ACT_CLS[e.act]}">${e.act}</span><span class="v num" style="color:${scoreColor(e.score)}">${e.score}</span><span class="bar"><i style="width:${e.score}%;background:${scoreColor(e.score)}"></i></span></div>
     ${spark(s,e)}
     <table class="plan-t">
-      <tr><td>매수</td><td class="num">${e.met?(e.type==='스윙'?`${PRE||(!CLOSED&&s.mrPrev)?"오늘":"다음"} 시가 (≈${fmt(s.p)})`:`지금 ${fmt(s.p)}`):e.type==='단타'?`${fmt(e.entry)} 돌파 시`:`${fmt(e.entry)} 이하 마감 시`}</td><td class="muted num">${SHARE?(e.type==='스윙'?'10%':''):fmt(e.qty)+'주'}</td></tr>
+      <tr><td>매수</td><td class="num">${e.type==='스윙'&&s.zoneTop&&(e.met||s.chase)?`<b>${fmt(s.zoneTop)}</b> 이하에서 ${s.chase?'(지금은 위 · 대기)':''}`:e.met?`지금 ${fmt(s.p)}`:e.type==='단타'?`${fmt(e.entry)} 돌파 시`:`${fmt(e.entry)} 이하 마감 시`}</td><td class="muted num">${SHARE?(e.type==='스윙'?'10%':''):fmt(e.qty)+'주'}</td></tr>
       ${e.type==='스윙'?`<tr class="sl"><td>손절</td><td class="num">없음 <span class="muted">비상 ${fmt(e.stop)}</span></td><td class="num">−20%</td></tr>
       <tr class="tp"><td>매도</td><td class="num">5일선 ${fmt(e.t1)} 위 마감</td><td class="num">+${e.t1p.toFixed(1)}%</td></tr>
       <tr><td>기한</td><td colspan="2" class="muted">최대 10거래일 · 과거 승률 61%</td></tr>`:`<tr class="sl"><td>손절</td><td class="num">${fmt(e.stop)}</td><td class="num">−${e.sp.toFixed(1)}%</td></tr>
@@ -530,7 +546,7 @@ function badge(x,y,n,bad){return `<g><circle cx="${x}" cy="${y}" r="10" fill="${
 const inR=(h,s)=>Math.abs(pct(h.avg,s.p))<35;
 function hline(W,pl,pr,y,color,label,dash,left){const lx=left?pl+2:W-pr+2,lw=left?84:pr-4;return `<line x1="${pl}" x2="${W-pr}" y1="${y}" y2="${y}" stroke="${color}" stroke-width="1.2" ${dash?'stroke-dasharray="5 4"':''}/><rect x="${lx}" y="${y-9}" width="${lw}" height="18" rx="4" fill="${color}"/><text x="${lx+lw/2}" y="${y+4}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#ffffff">${label}</text>`}
 function frame(bars,extra,opt){
-  const W=860,H=400,pl=8,pr=74,pt=18,pb=26,vh=58,ph=H-pt-pb-vh-10;
+  const W=860,H=460,pl=8,pr=74,pt=18,pb=26,vh=60,ph=H-pt-pb-vh-10;
   const lows=bars.map(b=>b.l).concat(extra),highs=bars.map(b=>b.h).concat(extra);
   let mn=Math.min(...lows),mx=Math.max(...highs);const pad=(mx-mn)*.06;mn-=pad;mx+=pad;
   const n=bars.length,bw=(W-pl-pr)/n,X=i=>pl+(i+.5)*bw,Y=v=>pt+(mx-v)/(mx-mn)*ph,Yinv=y=>mx-(y-pt)/ph*(mx-mn);
@@ -553,7 +569,7 @@ function planLines(F,s,e,hold,lim=35){
   return o;
 }
 function dailyChart(s,e,hold){
-  const span=chSpan,off=ND-span,bars=s.daily.slice(off),ex=[e.stop,e.t1];if(hold){ex.push(stopOf(hold));if(inR(hold,s))ex.push(hold.avg)}
+  const span=chSpan,off=ND-span,bars=s.daily.slice(off),ex=[e.type==='스윙'?Math.max(e.stop,s.p*0.85):e.stop,e.t1].concat(e.type==='스윙'&&s.zoneTop?[s.zoneTop*0.94]:[]);if(hold){ex.push(stopOf(hold));if(inR(hold,s))ex.push(hold.avg)}
   const q=span/3;
   const F=frame(bars,ex,{xlabels:[[0,`${span}일 전`],[Math.round(q),`${Math.round(span-q)}일 전`],[Math.round(2*q),`${Math.round(span-2*q)}일 전`],[span-1,'오늘']],
     volHi:i=>{const k=i+off;return e.type==='스윙'?((k>s.kStart&&k<=s.kPeak)||k===ND-1):k===ND-1}});
@@ -563,12 +579,18 @@ function dailyChart(s,e,hold){
   let under=`<polyline class="ma60" points="${path(60)}" fill="none" stroke="#3b82f6" stroke-width="1.3" opacity=".55"/><polyline class="ma20" points="${path(20)}" fill="none" stroke="#7c3aed" stroke-width="2"/><polyline class="ma5" points="${path(5)}" fill="none" stroke="#d97706" stroke-width="1" opacity=".7"/>`;
   let over='',steps=[];const last=span-1;
   if(e.type==='스윙'){
+    if(s.zoneTop&&(e.met||s.chase)){const zt=s.zoneTop,zb=zt*0.94,x0=F.X(Math.max(0,last-12));
+      under+=`<rect x="${x0}" y="${F.Y(zt)}" width="${F.X(last)+F.bw-x0}" height="${F.Y(zb)-F.Y(zt)}" fill="#16a34a" opacity=".13"/><line x1="${x0}" x2="${F.X(last)+F.bw}" y1="${F.Y(zt)}" y2="${F.Y(zt)}" stroke="#16a34a" stroke-width="1.5"/>`;
+      over+=`<rect x="${x0+4}" y="${F.Y(zt)+4}" width="148" height="18" rx="4" fill="#16a34a"/><text x="${x0+78}" y="${F.Y(zt)+17}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff">매수 구간 ${fmt(zt)} 이하</text>`;}
     const m60=s.ma60,UP=!CLOSED&&s.mrPrev&&e.met;
-    if(UP)steps.push(['어제 종가로 확정된 신호입니다',`어제 종가 기준 RSI(2) ${s.rsi2Prev.toFixed(1)} · 60일선 위·우상향 · 거래대금 조건을 모두 충족했습니다. 아래 항목은 지금 장중 가격 기준이라 일부 달라 보일 수 있지만, 오늘 시가 매수 신호는 바뀌지 않습니다.`,false]);
+    if(false)steps.push(['어제 종가로 확정된 신호입니다',`어제 종가 기준 RSI(2) ${s.rsi2Prev.toFixed(1)} · 60일선 위·우상향 · 거래대금 조건을 모두 충족했습니다. 아래 항목은 지금 장중 가격 기준이라 일부 달라 보일 수 있지만, 오늘 시가 매수 신호는 바뀌지 않습니다.`,false]);
     over+=badge(F.X(last)-14,F.Y(s.p)+22,2,s.rsi2>=5);
-    steps.push([s.mrTrend?`상승 추세: 60일선(${fmt(m60)}원) 위 + 60일선 우상향`:`추세 조건 미달 (${s.p>m60?'60일선 우하향':'60일선 아래'})`,s.mrTrend?'중기 추세가 살아 있는 종목만 고릅니다. 추세 속 짧은 급락은 되돌림이 잦습니다.':'하락 추세 종목의 급락은 더 떨어지는 경우가 많아 매매하지 않습니다.',!s.mrTrend]);
-    steps.push([s.rsi2<5?`단기 과매도: RSI(2) ${s.rsi2.toFixed(1)} (5 미만)`:`RSI(2) ${s.rsi2.toFixed(0)} — 아직 과매도 아님`,s.rsi2<5?`최근 3일 ${sgn(s.drop3)}. 짧게 과하게 밀린 상태로, 과거 이 신호 뒤 며칠 안에 5일선 위로 되돌아온 경우가 약 61%였습니다.`:`종가가 ${fmt(rsiTrigger(s.cl,5,CLOSED))}원 이하로 마감하면 5 미만이 됩니다. 아직은 기다립니다.`,s.rsi2>=5]);
+    const PV=!CLOSED&&s.mrPrev;   // 어제 확정 신호면 어제 종가 기준으로 설명
+    if(PV){steps.push(['어제 종가 기준: 60일선 위 + 우상향 · 거래대금 충족','신호는 어제 종가로 확정됐습니다. 장중 가격이 60일선 아래로 내려와도 오늘 매수 판단은 바뀌지 않습니다.',false]);steps.push([`어제 종가 RSI(2) ${s.rsi2Prev.toFixed(1)} (5 미만) — 단기 과매도`,'짧게 과하게 밀린 상태로, 과거 이 신호 뒤 며칠 안에 5일선 위로 되돌아온 경우가 약 61%였습니다.',false]);}
+    else steps.push([s.mrTrend?`상승 추세: 60일선(${fmt(m60)}원) 위 + 60일선 우상향`:`추세 조건 미달 (${s.p>m60?'60일선 우하향':'60일선 아래'})`,s.mrTrend?'중기 추세가 살아 있는 종목만 고릅니다. 추세 속 짧은 급락은 되돌림이 잦습니다.':'하락 추세 종목의 급락은 더 떨어지는 경우가 많아 매매하지 않습니다.',!s.mrTrend]);
+    if(!PV)steps.push([s.rsi2<5?`단기 과매도: RSI(2) ${s.rsi2.toFixed(1)} (5 미만)`:`RSI(2) ${s.rsi2.toFixed(0)} — 아직 과매도 아님`,s.rsi2<5?`최근 3일 ${sgn(s.drop3)}. 짧게 과하게 밀린 상태로, 과거 이 신호 뒤 며칠 안에 5일선 위로 되돌아온 경우가 약 61%였습니다.`:`종가가 ${fmt(rsiTrigger(s.cl,5,CLOSED))}원 이하로 마감하면 5 미만이 됩니다. 아직은 기다립니다.`,s.rsi2>=5]);
     steps.push([s.mrLiq?`거래대금 20일 평균 ${fmt(s.amt20)}억`:`거래대금 부족 (${fmt(s.amt20)}억 < 100억)`,s.mrLiq?'거래가 충분해 시가 매수·매도 때 체결 손해가 작습니다.':'거래가 적은 종목은 과거 성과가 나빠 제외합니다.',!s.mrLiq]);
+    if(s.zoneTop&&(e.met||s.chase))steps.push([s.chase?`매수 구간 위 — 추격 금지 (지금 ${fmt(s.p)} > ${fmt(s.zoneTop)})`:`매수 구간 안 (${fmt(s.zoneTop)}원 이하 = 5일선 −3%)`,`매도 기준인 5일선과 너무 가까우면 먹을 폭이 없습니다. 과거 데이터에서 5일선 −3%보다 위에서 산 경우 평균 수익이 +0.2~0.6%로 크게 줄었고, 아래에서 살수록 좋았습니다.`,!!s.chase]);
     steps.push(MRREG?['시장: 코스피 또는 코스닥이 60일선 위','시장 전체가 무너지는 구간에서는 신규 매수를 쉬습니다.',false]:['시장: 코스피·코스닥 모두 60일선 아래','이 구간에서는 신규 반등 매수를 쉬고 현금(코스피 ETF)으로 둡니다.',true]);
     steps.push([`매도: 종가가 5일선(지금 ${fmt(s.ma5)}원) 위로 오면 다음 날 시가`,'목표가를 정하지 않고 "평소 가격대로 돌아오면" 팝니다. 오르지 않아도 10거래일째 정리합니다. 가격 손절은 두지 않습니다 (넣으면 과거 수익이 줄었음).',false]);
   }else{
@@ -629,6 +651,8 @@ function attachHover(){
     const F=CH.F,i=Math.max(0,Math.min(F.n-1,Math.floor((p.x-F.pl)/F.bw))),b=CH.bars[i],prev=CH.bars[i-1];
     let h=`<line x1="${F.X(i)}" x2="${F.X(i)}" y1="${F.pt}" y2="${F.H-F.pb}" stroke="#98a2b3" stroke-dasharray="3 3"/>`;
     if(p.y<=F.pt+F.ph)h+=`<line x1="${F.pl}" x2="${F.W-F.pr}" y1="${p.y}" y2="${p.y}" stroke="#98a2b3" stroke-dasharray="3 3"/><rect x="${F.W-F.pr+2}" y="${p.y-9}" width="${F.pr-4}" height="18" rx="4" fill="#344054"/><text x="${F.W-F.pr/2}" y="${p.y+4}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff">${fmt(F.Yinv(p.y))}</text>`;
+    { const lab=CH.kind==='daily'?`${+String(b.d).slice(4,6)}/${+String(b.d).slice(6)}`:`${b.t.slice(0,2)}:${b.t.slice(2,4)}`;
+      h+=`<rect x="${F.X(i)-24}" y="${F.H-F.pb+4}" width="48" height="17" rx="4" fill="#344054"/><text x="${F.X(i)}" y="${F.H-F.pb+16}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#fff">${lab}</text>`; }
     xh.innerHTML=h;
     let dl;if(CH.kind==='daily'){const d=String(b.d),dt=new Date(+d.slice(0,4),+d.slice(4,6)-1,+d.slice(6));dl=`${+d.slice(4,6)}/${+d.slice(6)} (${W[dt.getDay()]})`}else{dl=`${b.t.slice(0,2)}:${b.t.slice(2,4)}`}
     const ch=prev?pct(b.c,prev.c):null,vAvg=avg(CH.bars.slice(Math.max(0,i-20),i).map(x=>x.v));
@@ -657,10 +681,10 @@ function renderChart(){
     <div class="ch-head"><div><div class="nm">${s.n} <span class="act ${ACT_CLS[e.act]}" style="vertical-align:middle">${e.act} ${e.score}</span> <span class="ty ${e.type==='단타'?'ty-d':'ty-s'}">${e.type}</span></div>
       <div class="muted" style="font-size:12.5px">${s.grp} · ${s.th} · ${s.code}</div></div>
       <div style="display:flex;gap:12px;align-items:center"><div style="text-align:right"><div class="num" style="font-size:19px;font-weight:700">${fmt(s.p)}</div><div class="${cls(s.chg)}"><span class="muted" style="font-size:11px">전일비 </span>${sgn(s.chg)}</div></div><button class="btn" id="chClose" title="Esc">닫기 ✕</button></div></div>
-    <div class="ch-tabs"><button data-v="daily" data-sp="60" class="${chView==='daily'&&chSpan===60?'on':''}">일봉 60일</button><button data-v="daily" data-sp="120" class="${chView==='daily'&&chSpan===120?'on':''}">일봉 120일</button><button data-v="intra" class="${chView==='intra'?'on':''}">오늘 5분봉</button>
+    <div class="ch-tabs">${[20,40,60,120].map(n=>`<button data-v="daily" data-sp="${n}" class="${chView==='daily'&&chSpan===n?'on':''}">${n}일</button>`).join('')}${chView==='daily'&&![20,40,60,120].includes(chSpan)?`<button class="on" data-v="daily" data-sp="${chSpan}">${chSpan}일</button>`:''}<button data-v="intra" class="${chView==='intra'?'on':''}">오늘 5분봉</button>
       <span class="legend" style="margin-left:auto">${C.legend.map(([k,c,t])=>`<span class="${k?'lg-t':''} ${k&&chHide[k]?'off':''}" data-k="${k||''}"><i style="background:${c}"></i>${t}</span>`).join('')}</span></div>
     <div class="chartbox ${hideCls}">${C.svg}<div class="tip"></div></div>
-    <div class="muted" style="font-size:11px;margin-top:4px">마우스를 올리면 그날의 시세가 나오고, 범례의 이동평균선을 누르면 켜고 끌 수 있습니다.</div>
+    <div class="muted" style="font-size:11px;margin-top:4px">마우스를 올리면 그날 시세 · <b>마우스 휠로 확대/축소</b>(20~120일) · 범례를 누르면 선 켜고 끄기 · 초록 띠 = 매수 구간</div>
    </div>
    <div class="dr-bottom"><div class="why">
       <div><div style="font-weight:700;margin-bottom:4px">왜 이 위치인가 <span class="muted" style="font-weight:400;font-size:12px">· 번호 = 차트의 동그라미 · <span class="warn">주황</span> 좋은 점 · <span class="err">빨강</span> 걸리는 점</span></div>
@@ -681,6 +705,7 @@ function renderChart(){
       </div></div></div>`;
   document.getElementById('chClose').onclick=closeChart;
   document.querySelectorAll('.ch-tabs button').forEach(b=>b.onclick=()=>{chView=b.dataset.v;if(b.dataset.sp)chSpan=+b.dataset.sp;renderChart()});
+  { const cb=document.querySelector('#cmodal .chartbox');if(cb&&chView==='daily')cb.onwheel=ev=>{ev.preventDefault();const ns=Math.max(20,Math.min(120,chSpan+(ev.deltaY>0?10:-10)));if(ns!==chSpan){chSpan=ns;renderChart()}}; }
   document.querySelectorAll('.legend .lg-t').forEach(l=>l.onclick=()=>{const k=l.dataset.k;chHide[k]=!chHide[k];l.classList.toggle('off',chHide[k]);document.querySelector('#cmodal .chartbox').classList.toggle('hide-'+k,chHide[k])});
   attachHover();
 }
@@ -784,6 +809,15 @@ function sigAt(s,k){const d=s.daily;if(k<80)return false;
   if(avg(d.slice(k-19,k+1).map(b=>b.c*b.v))/1e8<100)return false;
   if(rsi2Of(s.cl.slice(0,k+1))>=5)return false;
   return idxAbove60('KOSPI',d[k].d)||idxAbove60('KOSDAQ',d[k].d);}
+// 종가베팅(5일 보유): k번째 일봉 종가 기준. live=true면 장중 현재가로 미리 계산 (확정 아님)
+const CB_HOLD=5;
+function cbAt(s,k,live){const d=s.daily,b=d[k];if(k<30||!b||!d[k-1])return null;
+  const chg=b.c/d[k-1].c-1,clp=(b.c-b.l)/Math.max(b.h-b.l,1e-9),v20=avg(d.slice(k-20,k).map(x=>x.v));
+  const vr=live?s.rvol:(v20>0?b.v/v20:0),m20=ma(d,20,k),m20p=ma(d,20,k-5);
+  const amt=avg(d.slice(k-19,k+1).map(x=>x.c*x.v))/1e8;
+  const conds=[['당일 +5~15% 상승',chg>=.05&&chg<.15,sgn(chg*100)],['거래량 평소 2배↑',vr>2,vr.toFixed(1)+'배'],['고가 근처 마감(상위 30%)',clp>.7,Math.round(clp*100)+'%'],
+    ['20일선 위·우상향',b.c>m20&&m20>m20p,''],['거래대금 20일 평균 100억↑',amt>=100,fmt(amt)+'억'],['시장: 코스피·코스닥 중 하나 60일선 위',idxAbove60('KOSPI',b.d)||idxAbove60('KOSDAQ',b.d),'']];
+  return {ok:conds.every(c=>c[1]),near:conds.filter(c=>!c[1]).length===1&&chg>=.04,conds,chg,vr,clp,amt};}
 async function syncSignals(){
   if(SHARE){try{SIGLOG=await (await fetch('share_signals.json?'+Date.now())).json()}catch(e){}return}
   try{
@@ -791,19 +825,28 @@ async function syncSignals(){
     // 확정된 최근 12거래일 신호를 일봉으로 다시 계산해 빠진 날은 채움 (기록 전에 났던 신호, 장중에만 Update 한 날 포함)
     const ref=STOCKS[0];if(!ref)return;const last=STOCKS[0].liveBar?ND-2:ND-1;
     for(let k=last-11;k<=last;k++){const d=String(ref.daily[k].d);if(SIGLOG.days[d]&&k<last)continue;
-      const items=STOCKS.filter(s=>String(s.daily[k].d)===d&&sigAt(s,k)).map(s=>({code:s.code,n:s.n,c:s.daily[k].c,rsi2:+rsi2Of(s.cl.slice(0,k+1)).toFixed(1)}));
-      if(!SIGLOG.days[d]||JSON.stringify(SIGLOG.days[d].map(x=>x.code).sort())!==JSON.stringify(items.map(x=>x.code).sort()))
+      const items=STOCKS.filter(s=>String(s.daily[k].d)===d&&sigAt(s,k)).map(s=>({code:s.code,n:s.n,c:s.daily[k].c,rsi2:+rsi2Of(s.cl.slice(0,k+1)).toFixed(1)}))
+        .concat(STOCKS.filter(s=>String(s.daily[k].d)===d&&(cbAt(s,k,false)||{}).ok).map(s=>({code:s.code,n:s.n,c:s.daily[k].c,kind:'cb',chg:+(cbAt(s,k,false).chg*100).toFixed(1)})));
+      if(!SIGLOG.days[d]||JSON.stringify(SIGLOG.days[d].map(x=>(x.kind||'')+x.code).sort())!==JSON.stringify(items.map(x=>(x.kind||'')+x.code).sort()))
         SIGLOG=await (await fetch('/api/signals',{method:'POST',body:JSON.stringify({date:d,items})})).json();}
   }catch(e){}
 }
 const COST=0.0043;
 function tradeOf(sig,date){   // 기록된 신호 → 규칙대로 했을 때 결과 (다음 날 시가 매수, 종가>5일선 다음 날 시가 매도, 최대 10일)
   const s=STOCKS.find(x=>x.code===sig.code);if(!s)return null;const d=s.daily,k=d.findIndex(b=>String(b.d)===date);
-  if(k<0)return null;const r={n:s.n,code:s.code,date,rsi2:sig.rsi2};
+  if(k<0)return null;const r={n:s.n,code:s.code,date,rsi2:sig.rsi2,kind:sig.kind||'mr'};
+  if(r.kind==='cb'){r.entry=d[k].c;r.entryD=d[k].d;const lastF=s.liveBar?ND-2:ND-1,ex=k+CB_HOLD;
+    if(ex<=lastF){r.exit=d[ex].c;r.exitD=d[ex].d;r.status='완료';r.ret=r.exit/r.entry-1-COST;r.days=CB_HOLD;r.reason='5일 보유'}
+    else{r.days=(s.liveBar?ND-1:lastF)-k;r.ret=s.p/r.entry-1-COST;r.status=r.days>=CB_HOLD-1&&!s.liveBar?'매도 예정':'보유 중';r.reason=r.status==='매도 예정'?'5일째 종가 매도':'';
+      if(s.liveBar&&ND-1-k===CB_HOLD){r.status='매도 예정';r.reason='오늘 종가 매도'}}
+    const K=INDEX.KOSPI;if(K){const i0=K.findIndex(b=>String(b.d)===String(r.entryD)),i1=r.exitD?K.findIndex(b=>String(b.d)===String(r.exitD)):K.length-1;if(i0>=0&&i1>=0)r.kospi=K[i1].c/K[i0].c-1}
+    return r}
   if(k+1>=ND){r.status='대기';r.note=PRE?'오늘 시가 매수 예정':'다음 거래일 시가 매수 예정';return r}
-  r.entry=d[k+1].o;r.entryD=d[k+1].d;
+  { const zt=ma(d,5,k)*ZONE,o=d[k+1].o;
+    if(o<=zt)r.entry=o;else if(d[k+1].l<=zt)r.entry=zt;else if(s.liveBar&&k+1===ND-1){r.status='대기';r.note=`오늘 ${fmt(zt)}원 이하 지정가 대기 (지금 ${fmt(s.p)})`;return r}else{r.status='미체결';r.note=`매수 구간(${fmt(zt)}) 미도달`;return r}
+    r.entryD=d[k+1].d; }
   const lastF=s.liveBar?ND-2:ND-1;   // 장중 오늘 봉은 종가 미확정 → 매도 판단에서 제외
-  if(k+1>lastF&&s.liveBar){r.entry=d[k+1].o;r.entryD=d[k+1].d;r.status='보유 중';r.ret=s.p/r.entry-1-COST;r.days=1;return r}
+  if(k+1>lastF&&s.liveBar){r.status='보유 중';r.ret=s.p/r.entry-1-COST;r.days=1;return r}
   for(let j=k+1;j<=lastF;j++){const held=j-k;
     if(d[j].c>ma(d,5,j)||held>=10){r.reason=held>=10&&!(d[j].c>ma(d,5,j))?'10일 경과':'5일선 위 마감';
       if(j+1<ND){r.exit=d[j+1].o;r.exitD=d[j+1].d;r.status='완료';r.ret=r.exit/r.entry-1-COST;r.days=held}
@@ -817,8 +860,8 @@ function tradeOf(sig,date){   // 기록된 신호 → 규칙대로 했을 때 �
 function buildTrades(){   // 기록된 신호 → 거래 목록. 이미 들고 있는 종목의 재신호는 건너뜀 (백테스트와 동일)
   const T=[],last={};
   Object.entries(SIGLOG.days||{}).sort().forEach(([d,items])=>items.forEach(sig=>{
-    const p=last[sig.code];if(p&&(!p.exitD||String(p.exitD)>d))return;
-    const r=tradeOf(sig,d);if(r){T.push(r);last[sig.code]=r}}));
+    const key=(sig.kind||'mr')+sig.code,p=last[key];if(p&&(!p.exitD||String(p.exitD)>d))return;
+    const r=tradeOf(sig,d);if(r){T.push(r);if(r.status!=='미체결')last[key]=r}}));
   return T;
 }
 function renderTrack(){
@@ -826,15 +869,16 @@ function renderTrack(){
   const T=buildTrades().filter(r=>r.status!=='대기');
   const act=T.filter(r=>r.status==='보유 중'||r.status==='매도 예정'||(r.status==='완료'&&r.exitD&&String(r.exitD)>=String(STOCKS[0].daily[ND-1].d)));
   if(!act.length){box.innerHTML='';return}
-  const lab=r=>r.status==='매도 예정'?['매도','a-sell',r.reason==='10일 경과'?`10일 경과 → ${PRE?'오늘':'다음 거래일'} 시가 정리`:`종가가 5일선 위로 마감 → ${PRE?'오늘':'다음 거래일'} 시가 매도`]
+  const lab=r=>r.kind==='cb'?(r.status==='매도 예정'?['매도','a-sell',r.reason==='오늘 종가 매도'?'5거래일째 — 오늘 종가(동시호가)에 매도':'5거래일째 — 다음 거래일 종가 매도']:r.status==='완료'?['매도 완료','a-watch',`${r.exitD.slice(4,6)}/${r.exitD.slice(6)} 종가 ${fmt(r.exit)}원 매도`]:['보유 유지','a-hold',`종가베팅 ${r.days}/5일 · 5일째 종가 매도 · 손절 없음`])
+   :r.status==='매도 예정'?['매도','a-sell',r.reason==='10일 경과'?`10일 경과 → ${PRE?'오늘':'다음 거래일'} 시가 정리`:`종가가 5일선 위로 마감 → ${PRE?'오늘':'다음 거래일'} 시가 매도`]
     :r.status==='완료'?['매도 완료','a-watch',`${r.exitD.slice(4,6)}/${r.exitD.slice(6)} 시가 ${fmt(r.exit)}원 매도`]
     :(()=>{const s=STOCKS.find(x=>x.code===r.code);const ab=s&&!CLOSED&&s.p>s.ma5;return ab?['매도 대기','a-half',`지금 5일선 ${fmt(s.ma5)}원 위 — 종가까지 유지되면 다음 시가 매도`]:['보유 유지','a-hold',`5일선 ${s?fmt(s.ma5):'-'}원 아래 · ${r.days}/10일 · 가격 손절 없음`]})();
   box.innerHTML=`<div class="sec"><span class="act a-hold">추적</span> 최근 신호 종목 — 샀다면 여기서 매도 시점 확인 (${act.length})</div>
-   <table class="rec"><tr><th>신호일</th><th>종목</th><th>매수가(시가)</th><th>현재</th><th>수익</th><th>판단</th><th></th></tr>
+   <table class="rec"><tr><th>신호일</th><th>종목</th><th>매수가</th><th>현재</th><th>수익</th><th>판단</th><th></th></tr>
    ${act.sort((a,b)=>(a.status==='매도 예정'?0:1)-(b.status==='매도 예정'?0:1)).map(r=>{const [l,c,why]=lab(r);const s=STOCKS.find(x=>x.code===r.code);
-     return `<tr class="clk" data-n="${r.n}"><td>${r.date.slice(4,6)}/${r.date.slice(6)}</td><td><b>${r.n}</b></td><td class="num">${fmt(r.entry)}</td><td class="num">${s?fmt(s.p):'-'}</td>
+     return `<tr class="clk" data-n="${r.n}"><td>${r.date.slice(4,6)}/${r.date.slice(6)}</td><td><b>${r.n}</b> <span class="ty ${r.kind==='cb'?'ty-d':'ty-s'}">${r.kind==='cb'?'종가':'반등'}</span></td><td class="num">${fmt(r.entry)}</td><td class="num">${s?fmt(s.p):'-'}</td>
      <td class="num ${cls(r.ret)}">${sgn(r.ret*100,2)}</td><td><span class="act ${c}">${l}</span></td><td class="muted" style="font-size:12px">${why}</td></tr>`}).join('')}</table>
-   <div class="muted" style="font-size:11.5px;margin-top:4px">신호 다음 날 시가에 샀다고 가정한 수익(비용 차감). 실제 매수가와 다를 수 있습니다. 매수 신호는 하루만 '오늘의 추천'에 뜨고, 이후 매도 판단은 여기와 '내 보유'에서 보여줍니다.</div>`;
+   <div class="muted" style="font-size:11.5px;margin-top:4px">반등은 신호 다음 날 시가, 종가베팅은 신호 당일 종가에 샀다고 가정한 수익(비용 차감). 실제 매수가와 다를 수 있습니다. 매수 신호는 하루만 '오늘의 추천'에 뜨고, 이후 매도 판단은 여기와 '내 보유'에서 보여줍니다.</div>`;
   box.querySelectorAll('.clk').forEach(r=>r.onclick=()=>openChart(r.dataset.n));
 }
 function renderRecord(){renderTrack();
