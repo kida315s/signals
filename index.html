@@ -571,7 +571,9 @@ function evalStock(s){
   const P={vol:clamp((s.rvol-1)/3*100),vwap:s.vwapGap==null?50:clamp(50+s.vwapGap*15),brk:s.p>s.prevHigh?100:s.p>s.prevHigh*.98?60:30,
     theme:clamp(ts.up/ts.n*55+ts.avg*4),rs:s.rs,pb:inZone?90:s.pullback>-2?45:30,ext:s.run20>50?10:s.run20>35?40:80,
     trend:(s.aligned?50:0)+(s.ma20Up?50:0)};
-  const day=clamp((P.vol*.3+P.vwap*.25+P.brk*.25+P.theme*.2)*MK[market][0]);
+  let day=clamp((P.vol*.3+P.vwap*.25+P.brk*.25+P.theme*.2)*MK[market][0]);
+  const hot=s.chg>=25?2:s.chg>=15?1:0;   // 상한가권(+25%↑)은 사실상 매수 불가·다음날 급락 위험 → 단타 추천 제외, +15%↑는 추격 금지
+  if(hot===2)day=Math.min(day,40);else if(hot===1)day=Math.min(day,55);
   // 스윙 = 상승 추세 속 단기 과매도 반등 (RSI2<5). 2024~26 검증: 승률 약 61%, 남는 현금 코스피 ETF 보관 시 코스피 대비 +23/−9/+40%p
   const mrElig=s.mrTrend&&s.mrLiq;
   P.mr=s.rsi2<5?Math.min(95,82+(5-s.rsi2)*2.6):s.rsi2<10?66:s.rsi2<15?62:s.rsi2<20?55:s.rsi2<40?45:30;
@@ -582,7 +584,7 @@ function evalStock(s){
   let met,cond,entry,stop;
   if(type==='단타'&&CLOSED){const th=s.daily[ND-1].h;met=false;   // 장 마감 후: 내일의 '전일 고가' = 오늘 고가
     cond=`${PRE?'오늘':'내일'} 장중 ${fmt(rp(th))}원(${PRE?'어제':'오늘'} 고가) 돌파 시`;entry=rp(th);stop=th*0.97;}
-  else if(type==='단타'){met=s.p>s.prevHigh&&(s.vwapGap==null?s.chg>0:s.vwapGap>0);
+  else if(type==='단타'){met=s.p>s.prevHigh&&(s.vwapGap==null?s.chg>0:s.vwapGap>0)&&s.chg<15;
     cond=met?`전일 고가 ${fmt(s.prevHigh)}원 돌파${s.vwapGap==null?'':' + 장중 평균가 위'}`:`전일 고가 ${fmt(s.prevHigh)}원 돌파 시`;entry=met?s.p:s.prevHigh;
     stop=Math.min(s.prevHigh,s.vwap??s.prevHigh)*0.985;}
   else{ // 스윙(반등)
