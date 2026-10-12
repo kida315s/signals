@@ -1075,7 +1075,7 @@ function renderRecord(){renderTrack();
       <div><span>평균 (비용 후)</span><b class="${cls(avgR)}">${done.length?sgn(avgR*100,2):'-'}</b><i>백테스트 +1.1%</i></div>
       <div><span>같은 기간 코스피</span><b class="${cls(avgK)}">${done.length?sgn(avgK*100,2):'-'}</b><i>건당 평균</i></div></div>
     <table class="rec"><tr><th>신호일</th><th>종목</th><th>RSI2</th><th>상태</th><th>매수</th><th>매도</th><th>일수</th><th>수익</th><th>코스피</th></tr>
-    ${[...T].reverse().slice(0,40).map(r=>`<tr class="clk" data-n="${r.n}"><td>${r.date.slice(4,6)}/${r.date.slice(6)}</td><td><b>${r.n}</b></td><td>${r.rsi2}</td>
+    ${[...T].reverse().slice(0,40).map(r=>`<tr class="clk" data-n="${r.n}"><td>${r.date.slice(4,6)}/${r.date.slice(6)}</td><td><b>${r.n}</b> <span class="ty ${r.kind==='cb'?'ty-d':'ty-s'}">${r.kind==='cb'?'종가':'반등'}</span></td><td>${r.kind==='cb'?'-':r.rsi2}</td>
       <td><span class="act ${r.status==='완료'?'a-watch':r.status==='대기'?'a-wait':r.status==='매도 예정'?'a-sell':'a-hold'}">${r.status}</span></td>
       <td class="num">${r.entry?fmt(r.entry):'-'}</td><td class="num">${r.exit?fmt(r.exit):(r.note||'-')}</td><td class="num">${r.days??'-'}</td>
       <td class="num ${cls(r.ret||0)}">${r.ret!=null?sgn(r.ret*100,2):'-'}</td><td class="num ${cls(r.kospi||0)}">${r.kospi!=null?sgn(r.kospi*100,2):'-'}</td></tr>`).join('')}</table>`
