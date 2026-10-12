@@ -845,7 +845,7 @@ function renderChart(){
   if(!chName)return;const s=S(chName);if(!s){closeChart();return}
   const e=evalStock(s),hold=HOLD.find(h=>h.n===chName);
   CH=null;
-  const C=chView==='intra'?(s.intra&&s.intra.length>1?intraChart(s,e,hold):s.intra?{svg:'<div class="muted" style="padding:80px 20px;text-align:center">5분봉이 아직 1개뿐입니다. 09:10 이후 Update를 다시 누르면 차트가 나옵니다.</div>',steps:[],legend:[]}:{svg:'<div class="muted" style="padding:80px 20px;text-align:center">오늘 5분봉·장중 평균가(VWAP)는 <b>KIS API 연결 후</b> 표시됩니다.<br>지금은 일봉 기준으로만 판단합니다.</div>',steps:[],legend:[]}):dailyChart(s,e,hold);
+  const C=chView==='intra'?(s.intra&&s.intra.length>1?intraChart(s,e,hold):s.intra?{svg:'<div class="muted" style="padding:80px 20px;text-align:center">5분봉이 아직 1개뿐입니다. 09:10 이후 Update를 다시 누르면 차트가 나옵니다.</div>',steps:[],legend:[]}:{svg:`<div class="muted" style="padding:80px 20px;text-align:center">${SHARE?'공유 페이지에는 5분봉을 올리지 않습니다.':(DATA.kis&&DATA.kis.ok?'이 종목은 오늘 5분봉 감시 대상이 아닙니다.<br>KIS 조회 한도 때문에 보유·최근 신호·순위·거래 급증 종목 약 60개만 5분봉을 받습니다.':'오늘 5분봉·장중 평균가(VWAP)는 <b>KIS API 연결 후</b> 표시됩니다.')}<br>지금은 일봉 기준으로 판단합니다.</div>`,steps:[],legend:[]}):dailyChart(s,e,hold);
   const goods=C.steps.filter(x=>!x[2]).length,bads=C.steps.length-goods;
   const hv=hold?sellEval(hold):null;const verdict=hold?`<b>보유 중 → ${sellAct(hv.score)[0]} (매도 점수 ${hv.score})</b><br>매수가 ${fmt(hold.avg)}원 (${sgn(pct(s.p,hold.avg))}) · 내 손절선 ${fmt(hv.st)}원. ${hv.reasons[0]}.`:
     e.act==='매수'?(e.type==='스윙'?`<b>반등 매수 신호입니다.</b> 좋은 점 ${goods}개${bads?`, 걸리는 점 ${bads}개`:''}. 종목당 10%만 사고, 5일선 위 마감 시 또는 10일째 정리합니다.`:`<b>좋은 위치입니다.</b> 좋은 점 ${goods}개${bads?`, 걸리는 점 ${bads}개`:''}. 틀리면 손절선에서 −${e.sp.toFixed(1)}%로 끊습니다.`):
