@@ -663,11 +663,13 @@ function renderToday(){
       ${conf.length||near.length?`<table class="rec"><tr><th>종목</th><th>등락</th><th>거래량</th><th>마감 위치</th><th>거래대금</th><th>현재가</th><th>판단</th></tr>${conf.slice(0,10).map(row).join('')}${near.slice(0,6).map(row).join('')}</table>`:'<div class="muted" style="font-size:12.5px">조건에 맞는 종목 없음</div>'}
       <div class="muted" style="font-size:11.5px;margin-top:4px">조건: +5~15% · 거래량 2배↑ · 고가 근처 마감 · 20일선 우상향 · 거래대금 100억↑ · 시장 필터. 종목당 10%, 손절 없이 5일 보유. 2024~26 검증 785건 · 승률 46% · 평균 +0.97%(비용 후). <b>단독으로는 코스피 보유보다 수익이 낮았던 전략</b>입니다. 다음날 시가에 사면 효과가 사라지니 반드시 종가에 매수.</div>`);
     document.querySelectorAll('#picks tr.clk').forEach(r=>r.onclick=()=>openChart(r.dataset.n)); }
+  if(!SHARE&&DATA.kis&&DATA.kis.ok){const codes=[...B,...Wt.slice(0,20)].map(e=>e.s.code);
+    const key=codes.join(',');if(key!==WATCH_SENT){WATCH_SENT=key;fetch('/api/watch',{method:'POST',body:JSON.stringify({codes})}).catch(()=>{})}}
   const mw=document.getElementById('moreW');if(mw)mw.onclick=()=>{WMORE+=12;renderToday()};
   const lw=document.getElementById('lessW');if(lw)lw.onclick=()=>{WMORE=6;renderToday()};
   document.querySelectorAll('.pick').forEach(c=>c.onclick=()=>openChart(c.dataset.n));
 }
-let sty='all',WMORE=6;
+let sty='all',WMORE=6,WATCH_SENT='';
 const EVENTS=[ // 실제 일정 (2026-10-07 확인). 금통위 날짜는 한은 공지 확인 필요
  ['2026-10-08','목','코스피200 옵션 만기일','변동성 확대 주의','kr'],
  ['2026-10-09','금','한글날 · 국내 증시 휴장','연휴 전 포지션 정리 고려','kr'],
@@ -714,7 +716,17 @@ function card(e){const s=e.s;
 
 // ================= 차트 모달 =================
 let chView='daily',chName=null,chSpan=60,CH=null;const chHide={};
-function openChart(n){chName=n;const s0=S(n),e=evalStock(s0);chView=e.type==='단타'&&s0.intra?'intra':'daily';renderChart();
+async function fetchIntra(s){
+  if(SHARE||s.intra||s._intraTry||!DATA.kis||!DATA.kis.ok)return false;
+  if(String(s.daily[ND-1].d)!==DATA.asof.slice(0,10).replace(/-/g,''))return false;   // 오늘 장이 열린 날만
+  s._intraTry=true;
+  try{const j=await (await fetch('/api/intra?code='+s.code)).json();
+    if(j.ok&&j.intra&&j.intra.length){s.intra=j.intra.map(x=>({t:x[0],o:x[1],h:x[2],l:x[3],c:x[4],v:x[5],vwap:x[6]}));const b=s.intra[s.intra.length-1];s.p=b.c;s.daily[ND-1].c=b.c;derive(s);return true}}catch(e){}
+  return false;
+}
+function openChart(n){chName=n;const s0=S(n);
+  if(!s0.intra&&!SHARE&&DATA.kis&&DATA.kis.ok&&!s0._intraTry){s0._loading=true;fetchIntra(s0).then(ok=>{s0._loading=false;if(chName===n)renderChart();if(ok)render()})}
+  const e=evalStock(s0);chView=e.type==='단타'&&s0.intra?'intra':'daily';renderChart();
   document.getElementById('cbg').classList.add('open');document.body.classList.add('drawer-open');markSel()}
 function closeChart(){document.getElementById('cbg').classList.remove('open');document.body.classList.remove('drawer-open');chName=null;markSel()}
 function markSel(){document.querySelectorAll('.pick,.hrow').forEach(c=>c.classList.toggle('sel',!!chName&&c.dataset.n===chName))}
@@ -845,7 +857,7 @@ function renderChart(){
   if(!chName)return;const s=S(chName);if(!s){closeChart();return}
   const e=evalStock(s),hold=HOLD.find(h=>h.n===chName);
   CH=null;
-  const C=chView==='intra'?(s.intra&&s.intra.length>1?intraChart(s,e,hold):s.intra?{svg:'<div class="muted" style="padding:80px 20px;text-align:center">5분봉이 아직 1개뿐입니다. 09:10 이후 Update를 다시 누르면 차트가 나옵니다.</div>',steps:[],legend:[]}:{svg:`<div class="muted" style="padding:80px 20px;text-align:center">${SHARE?'공유 페이지에는 5분봉을 올리지 않습니다.':(DATA.kis&&DATA.kis.ok?'이 종목은 오늘 5분봉 감시 대상이 아닙니다.<br>KIS 조회 한도 때문에 보유·최근 신호·순위·거래 급증 종목 약 60개만 5분봉을 받습니다.':'오늘 5분봉·장중 평균가(VWAP)는 <b>KIS API 연결 후</b> 표시됩니다.')}<br>지금은 일봉 기준으로 판단합니다.</div>`,steps:[],legend:[]}):dailyChart(s,e,hold);
+  const C=chView==='intra'?(s.intra&&s.intra.length>1?intraChart(s,e,hold):s._loading?{svg:'<div class="muted" style="padding:80px 20px;text-align:center">오늘 5분봉 받는 중… (몇 초)</div>',steps:[],legend:[]}:s.intra?{svg:'<div class="muted" style="padding:80px 20px;text-align:center">5분봉이 아직 1개뿐입니다. 09:10 이후 Update를 다시 누르면 차트가 나옵니다.</div>',steps:[],legend:[]}:{svg:`<div class="muted" style="padding:80px 20px;text-align:center">${SHARE?'공유 페이지에는 5분봉을 올리지 않습니다.':(DATA.kis&&DATA.kis.ok?'이 종목은 오늘 5분봉 감시 대상이 아닙니다.<br>KIS 조회 한도 때문에 보유·최근 신호·순위·거래 급증 종목 약 60개만 5분봉을 받습니다.':'오늘 5분봉·장중 평균가(VWAP)는 <b>KIS API 연결 후</b> 표시됩니다.')}<br>지금은 일봉 기준으로 판단합니다.</div>`,steps:[],legend:[]}):dailyChart(s,e,hold);
   const goods=C.steps.filter(x=>!x[2]).length,bads=C.steps.length-goods;
   const hv=hold?sellEval(hold):null;const verdict=hold?`<b>보유 중 → ${sellAct(hv.score)[0]} (매도 점수 ${hv.score})</b><br>매수가 ${fmt(hold.avg)}원 (${sgn(pct(s.p,hold.avg))}) · 내 손절선 ${fmt(hv.st)}원. ${hv.reasons[0]}.`:
     e.act==='매수'?(e.type==='스윙'?`<b>반등 매수 신호입니다.</b> 좋은 점 ${goods}개${bads?`, 걸리는 점 ${bads}개`:''}. 종목당 10%만 사고, 5일선 위 마감 시 또는 10일째 정리합니다.`:`<b>좋은 위치입니다.</b> 좋은 점 ${goods}개${bads?`, 걸리는 점 ${bads}개`:''}. 틀리면 손절선에서 −${e.sp.toFixed(1)}%로 끊습니다.`):
@@ -1003,13 +1015,20 @@ async function syncSignals(){
   if(SHARE){try{SIGLOG=await (await fetch('share_signals.json?'+Date.now())).json()}catch(e){}return}
   try{
     SIGLOG=await (await fetch('/api/signals')).json();SIGLOG.days=SIGLOG.days||{};
-    // 확정된 최근 12거래일 신호를 일봉으로 다시 계산해 빠진 날은 채움 (기록 전에 났던 신호, 장중에만 Update 한 날 포함)
-    const ref=STOCKS[0];if(!ref)return;const last=STOCKS[0].liveBar?ND-2:ND-1;
-    for(let k=last-11;k<=last;k++){const d=String(ref.daily[k].d);if(SIGLOG.days[d]&&k<last)continue;
-      const items=STOCKS.filter(s=>String(s.daily[k].d)===d&&sigAt(s,k)).map(s=>({code:s.code,n:s.n,c:s.daily[k].c,rsi2:+rsi2Of(s.cl.slice(0,k+1)).toFixed(1)}))
-        .concat(STOCKS.filter(s=>String(s.daily[k].d)===d&&(cbAt(s,k,false)||{}).ok).map(s=>({code:s.code,n:s.n,c:s.daily[k].c,kind:'cb',chg:+(cbAt(s,k,false).chg*100).toFixed(1)})));
-      if(!SIGLOG.days[d]||JSON.stringify(SIGLOG.days[d].map(x=>(x.kind||'')+x.code).sort())!==JSON.stringify(items.map(x=>(x.kind||'')+x.code).sort()))
-        SIGLOG=await (await fetch('/api/signals',{method:'POST',body:JSON.stringify({date:d,items})})).json();}
+    // 확정된 최근 12거래일 신호를 일봉으로 다시 계산해 빠진 날은 채움 (종목마다 날짜로 맞춰서 계산 — 종목별 마지막 봉 날짜가 달라도 안전)
+    const today=DATA.asof.slice(0,10).replace(/-/g,''),open_=!CLOSED;
+    const dates=[...new Set(STOCKS.flatMap(s=>s.daily.slice(-14).map(b=>String(b.d))))].sort().filter(d=>!(open_&&d===today)).slice(-12);
+    for(const d of dates){
+      const items=[],cands=[];
+      for(const s of STOCKS){const k=s.daily.findIndex(b=>String(b.d)===d);if(k<0)continue;if(s.liveBar&&k===ND-1)continue;
+        if(sigAt(s,k))items.push({code:s.code,n:s.n,c:s.daily[k].c,rsi2:+rsi2Of(s.cl.slice(0,k+1)).toFixed(1)});
+        const cb=cbAt(s,k,false);if(cb&&cb.ok)cands.push({code:s.code,n:s.n,c:s.daily[k].c,kind:'cb',chg:+(cb.chg*100).toFixed(1)});}
+      const all=items.concat(cands),key=x=>(x.kind||'')+x.code;
+      const prev=SIGLOG.days[d];
+      // 이미 기록된 신호는 지우지 않고, 새로 확인된 신호만 더함
+      const merged=(prev||[]).concat(all.filter(x=>!(prev||[]).some(y=>key(y)===key(x))));
+      if(!prev||merged.length!==prev.length)SIGLOG=await (await fetch('/api/signals',{method:'POST',body:JSON.stringify({date:d,items:merged})})).json();
+    }
   }catch(e){}
 }
 const COST=0.0043;
@@ -1065,15 +1084,19 @@ function renderTrack(){
 function renderRecord(){renderTrack();
   const box=document.getElementById('recBox');if(!box)return;
   const T=buildTrades();
-  const done=T.filter(r=>r.status==='완료'),open=T.filter(r=>r.status!=='완료'&&r.status!=='대기'),wait=T.filter(r=>r.status==='대기');
-  const win=done.filter(r=>r.ret>0).length,avgR=done.length?avg(done.map(r=>r.ret)):0,avgK=done.filter(r=>r.kospi!=null).length?avg(done.filter(r=>r.kospi!=null).map(r=>r.kospi)):0;
+  const live=r=>r.status==='보유 중'||r.status==='매도 예정';
+  const done=T.filter(r=>r.status==='완료'),open=T.filter(live),wait=T.filter(r=>r.status==='대기');
+  const st=a=>{const k=a.filter(r=>r.kospi!=null);return {n:a.length,win:a.length?a.filter(r=>r.ret>0).length/a.length:0,avg:a.length?avg(a.map(r=>r.ret)):0,k:k.length?avg(k.map(r=>r.kospi)):0}};
+  const mr=r=>r.kind!=='cb',D_=st(done.filter(mr)),O_=st(open.filter(mr)),A_=st(done.concat(open).filter(mr)),C_=st(done.concat(open).filter(r=>r.kind==='cb'));
+  const pc=(x,d=2)=>`<b class="${cls(x)}">${sgn(x*100,d)}</b>`;
   const days=Object.keys(SIGLOG.days||{}).length;
   document.getElementById('recSub').textContent=days?`기록 ${days}일 · 신호 ${T.length}건`:'';
   box.innerHTML=(T.length?`<div class="cards4">
-      <div><span>완료</span><b>${done.length}건</b></div>
-      <div><span>승률</span><b>${done.length?Math.round(win/done.length*100)+'%':'-'}</b><i>백테스트 61%</i></div>
-      <div><span>평균 (비용 후)</span><b class="${cls(avgR)}">${done.length?sgn(avgR*100,2):'-'}</b><i>백테스트 +1.1%</i></div>
-      <div><span>같은 기간 코스피</span><b class="${cls(avgK)}">${done.length?sgn(avgK*100,2):'-'}</b><i>건당 평균</i></div></div>
+      <div><span>반등 · 매도 완료</span>${D_.n?pc(D_.avg):'<b>-</b>'}<i>${D_.n}건 · 승률 ${D_.n?Math.round(D_.win*100)+'%':'-'} (백테스트 61% · +1.1%)</i></div>
+      <div><span>반등 · 보유 중 (현재가 평가)</span>${O_.n?pc(O_.avg):'<b>-</b>'}<i>${O_.n}건 · 플러스 ${O_.n?Math.round(O_.win*100)+'%':'-'}</i></div>
+      <div><span>반등 · 전체 (완료+보유 중)</span>${A_.n?pc(A_.avg):'<b>-</b>'}<i>${A_.n}건 · 건당 평균</i></div>
+      <div><span>같은 기간 코스피</span>${A_.n?pc(A_.k):'<b>-</b>'}<i>전체 건 기준 · 차이 ${A_.n?sgn((A_.avg-A_.k)*100,2)+'p':'-'}</i></div></div>
+    ${C_.n?`<div class="muted" style="font-size:12px;margin:-4px 0 8px">종가베팅: ${C_.n}건 · 평균 ${sgn(C_.avg*100,2)} · 같은 기간 코스피 ${sgn(C_.k*100,2)} (완료+보유 중)</div>`:''}
     <table class="rec"><tr><th>신호일</th><th>종목</th><th>RSI2</th><th>상태</th><th>매수</th><th>매도</th><th>일수</th><th>수익</th><th>코스피</th></tr>
     ${[...T].reverse().slice(0,40).map(r=>`<tr class="clk" data-n="${r.n}"><td>${r.date.slice(4,6)}/${r.date.slice(6)}</td><td><b>${r.n}</b> <span class="ty ${r.kind==='cb'?'ty-d':'ty-s'}">${r.kind==='cb'?'종가':'반등'}</span></td><td>${r.kind==='cb'?'-':r.rsi2}</td>
       <td><span class="act ${r.status==='완료'?'a-watch':r.status==='대기'?'a-wait':r.status==='매도 예정'?'a-sell':'a-hold'}">${r.status}</span></td>
